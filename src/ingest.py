@@ -1,6 +1,7 @@
 import argparse
 import sqlite3
 import time
+import traceback
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -137,13 +138,17 @@ def process_game(conn, event):
                 fgm, fga = split_made_att(d.get("FG"))
                 fg3m, fg3a = split_made_att(d.get("3PT"))
                 ftm, fta = split_made_att(d.get("FT"))
-                athlete = a["athlete"]
+                athlete = a.get("athlete") or {}
+                pid = athlete.get("id")
+                if pid is None:
+                    print(f"   game {game_id}: player without id: {athlete.get('displayName')}")
+                    continue
                 conn.execute(
                     "INSERT OR REPLACE INTO players (player_id, name) VALUES (?, ?)",
-                    (athlete["id"], athlete.get("displayName")),
+                    (pid, athlete.get("displayName")),
                 )
                 upsert(conn, "player_game_stats", PLAYER_COLS, {
-                    "game_id": game_id, "player_id": athlete["id"], "team_id": tid,
+                    "game_id": game_id, "player_id": pid, "team_id": tid,
                     "starter": 1 if a.get("starter") else 0,
                     "minutes": to_int(d.get("MIN")), "pts": to_int(d.get("PTS")),
                     "fgm": fgm, "fga": fga, "fg3m": fg3m, "fg3a": fg3a,
@@ -193,9 +198,12 @@ def main():
             try:
                 if process_game(conn, ev):
                     new += 1
+                else:
+                    print(f"   no box score for game {ev['id']} ({ev.get('name')})")
             except Exception as e:
                 conn.rollback()
                 print(f"   skipped game {ev.get('id')}: {type(e).__name__}: {e}")
+                traceback.print_exc(limit=-1)
         if events:
             print(f"{d}: {len(events)} games on scoreboard, {new} new")
         total_new += new
