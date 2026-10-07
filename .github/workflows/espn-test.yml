@@ -1,0 +1,15 @@
+name: ESPN reachability test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call ESPN scoreboard
+        run: |
+          code=$(curl -m 30 -s -o /tmp/out.json -w "%{http_code}" "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard")
+          echo "HTTP status: $code"
+          head -c 300 /tmp/out.json
+          test "$code" = "200"
