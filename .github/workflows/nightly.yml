@@ -1,0 +1,54 @@
+name: Nightly update
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: pip install requests pandas
+
+      - name: Download database
+        run: |
+          mkdir -p data
+          curl -L -f -o data/nba.db "https://github.com/${{ github.repository }}/releases/download/data/nba.db"
+
+      - name: Add finished games
+        run: python src/ingest.py --days 3
+
+      - name: Log picks before tip-off
+        run: python src/predict.py --days-ahead 0 --include-preseason
+
+      - name: Export pick log
+        run: python src/export_predictions.py
+
+      - name: Upload database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload data data/nba.db --clobber --repo ${{ github.repository }}
+
+      - name: Commit pick log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/predictions.csv
+          git diff --cached --quiet || git commit -m "Update pick log $(date -u +%F)"
+          git push
